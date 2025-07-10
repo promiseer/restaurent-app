@@ -1,0 +1,19 @@
+{
+  "name": "restaurant-ordering-app",
+  "version": "1.0.0",
+  "description": "Full-stack restaurant food ordering application with RBAC",
+  "scripts": {
+    "dev": "concurrently \"npm run server\" \"npm run client\"",
+    "server": "cd backend && npm run dev",
+    "client": "cd frontend && npm run dev",
+    "build": "cd frontend && npm run build",
+    "start": "cd backend && npm start",
+    "install-all": "npm install && cd backend && npm install && cd ../frontend && npm install"
+  },
+  "keywords": ["restaurant", "food-ordering", "rbac", "nextjs", "nodejs"],
+  "author": "Developer",
+  "license": "MIT",
+  "devDependencies": {
+    "concurrently": "^8.2.2"
+  }
+}

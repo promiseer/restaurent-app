@@ -81,7 +81,7 @@ export default function Navbar() {
         <div className="flex justify-between h-16">
           <div className="flex items-center">
             <Link href="/" onClick={handleLogout} className="flex-shrink-0 flex items-center">
-              <span className="text-2xl font-bold text-orange-600">FoodieApp</span>
+              <span className="text-2xl font-bold text-orange-600">Foodie</span>
             </Link>
             
             {user && (

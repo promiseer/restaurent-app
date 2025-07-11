@@ -5,7 +5,7 @@ import { useRouter } from 'next/navigation'
 import { userAPI, restaurantAPI, orderAPI, auth } from '../../lib/api'
 
 interface User {
-  id: string
+  _id: string
   name: string
   email: string
   role: string
@@ -73,7 +73,7 @@ export default function AdminPage() {
     
     try {
       await userAPI.delete(userId)
-      setUsers(users.filter(user => user.id !== userId))
+      setUsers(users.filter(user => user._id !== userId))
     } catch (error: any) {
       alert(error.message || 'Failed to delete user')
     }
@@ -83,7 +83,7 @@ export default function AdminPage() {
     try {
       await userAPI.update(userId, { role: newRole })
       setUsers(users.map(user => 
-        user.id === userId ? { ...user, role: newRole } : user
+        user._id === userId ? { ...user, role: newRole } : user
       ))
     } catch (error: any) {
       alert(error.message || 'Failed to update user role')
@@ -269,7 +269,7 @@ export default function AdminPage() {
               </thead>
               <tbody className="bg-white divide-y divide-gray-200">
                 {users.map((user) => (
-                  <tr key={user.id}>
+                  <tr key={user._id}>
                     <td className="px-6 py-4 whitespace-nowrap">
                       <div>
                         <div className="text-sm font-medium text-gray-900">{user.name}</div>
@@ -279,7 +279,7 @@ export default function AdminPage() {
                     <td className="px-6 py-4 whitespace-nowrap">
                       <select
                         value={user.role}
-                        onChange={(e) => handleUpdateUserRole(user.id, e.target.value)}
+                        onChange={(e) => handleUpdateUserRole(user._id, e.target.value)}
                         className="text-sm border border-gray-300 rounded px-2 py-1"
                         disabled={currentUser?.role !== 'admin'}
                       >
@@ -295,9 +295,9 @@ export default function AdminPage() {
                       {new Date(user.createdAt).toLocaleDateString()}
                     </td>
                     <td className="px-6 py-4 whitespace-nowrap text-sm font-medium">
-                      {currentUser?.role === 'admin' && user.id !== currentUser.id && (
+                      {currentUser?.role === 'admin' && user._id !== currentUser._id && (
                         <button
-                          onClick={() => handleDeleteUser(user.id)}
+                          onClick={() => handleDeleteUser(user._id)}
                           className="text-red-600 hover:text-red-900"
                         >
                           Delete

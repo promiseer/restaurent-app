@@ -6,7 +6,8 @@ import { useToast } from '../../components/ToastContext'
 import { auth, restaurantAPI } from '../../lib/api'
 
 interface User {
-  id: string
+  _id?: string
+  id?: string
   name: string
   email: string
   role: string
@@ -147,7 +148,7 @@ export default function DashboardPage() {
           <div className="flex justify-between items-center mb-6">
             <h3 className="text-2xl font-bold text-gray-900">
               Available Restaurants
-              {user?.role === 'admin' ? ' (All Countries)' : ` in ${user?.country}`}
+              {user?.role === 'admin' ? ' (All Countries)' : ` in ${user?.country || 'Your Location'}`}
             </h3>
             <span className="text-sm text-gray-500">
               {restaurants.length} restaurant{restaurants.length !== 1 ? 's' : ''} found

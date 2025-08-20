@@ -10,6 +10,7 @@ const userRoutes = require('./routes/users');
 const restaurantRoutes = require('./routes/restaurants');
 const orderRoutes = require('./routes/orders');
 const paymentRoutes = require('./routes/payments');
+const collaborativeCartRoutes = require('./routes/collaborativeCart');
 
 const app = express();
 
@@ -25,7 +26,7 @@ const limiter = rateLimit({
   windowMs: 15 * 60 * 1000, // 15 minutes
   max: 100 // limit each IP to 100 requests per windowMs
 });
-app.use(limiter);
+// app.use(limiter);
 
 // Body parser middleware
 app.use(express.json({ limit: '10mb' }));
@@ -42,6 +43,7 @@ app.use('/api/users', userRoutes);
 app.use('/api/restaurants', restaurantRoutes);
 app.use('/api/orders', orderRoutes);
 app.use('/api/payments', paymentRoutes);
+app.use('/api/collaborative-carts', collaborativeCartRoutes);
 
 // Health check endpoint
 app.get('/api/health', (req, res) => {

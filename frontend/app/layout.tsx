@@ -1,6 +1,7 @@
 import React from 'react'
 import '../styles/globals.css'
 import { CartProvider } from '../components/CartContext'
+import { CollaborativeCartProvider } from '../components/CollaborativeCartContext'
 import { ToastProvider } from '../components/ToastContext'
 import Navbar from '../components/Navbar'
 
@@ -19,10 +20,12 @@ export default function RootLayout({
       <body className="bg-gray-50 min-h-screen">
         <ToastProvider>
           <CartProvider>
-            <Navbar />
-            <main className="pt-16">
-              {children}
-            </main>
+            <CollaborativeCartProvider>
+              <Navbar />
+              <main className="pt-16">
+                {children}
+              </main>
+            </CollaborativeCartProvider>
           </CartProvider>
         </ToastProvider>
       </body>

@@ -4,6 +4,7 @@ import React, { useState, useEffect } from 'react'
 import Link from 'next/link'
 import { useRouter, usePathname } from 'next/navigation'
 import { useCart } from './CartContext'
+import { useCollaborativeCart } from './CollaborativeCartContext'
 import { apiClient } from '../lib/api'
 
 interface User {
@@ -18,8 +19,21 @@ export default function Navbar() {
   const [user, setUser] = useState<User | null>(null)
   const [isMenuOpen, setIsMenuOpen] = useState(false)
   const { getItemCount } = useCart()
+  const { carts, activeCart } = useCollaborativeCart()
   const router = useRouter()
   const pathname = usePathname()
+
+  // Calculate total collaborative cart items count
+  const getCollaborativeCartItemCount = () => {
+    if (!carts || carts.length === 0) return 0
+    
+    return carts.reduce((total, cart) => {
+      if (cart.status === 'active' && cart.items) {
+        return total + cart.items.reduce((cartTotal, item) => cartTotal + (item.quantity || 0), 0)
+      }
+      return total
+    }, 0)
+  }
 
   useEffect(() => {
     checkAuth()
@@ -74,6 +88,7 @@ export default function Navbar() {
   }
 
   const cartItemCount = getItemCount()
+  const collaborativeItemCount = getCollaborativeCartItemCount()
 
   return (
     <nav className="bg-white shadow-lg fixed top-0 left-0 right-0 z-50">
@@ -104,13 +119,30 @@ export default function Navbar() {
           <div className="flex items-center space-x-4">
             {user ? (
               <>
-                <Link href="/cart" className="relative p-2 text-gray-600 hover:text-orange-600">
+                {/* Regular Cart */}
+                <Link href="/cart" className="relative p-2 text-gray-600 hover:text-orange-600" title="My Cart">
                   <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 3h2l.4 2M7 13h10l4-8H5.4m0 0L7 13m0 0l-1.5 9h9L13 13M13 13v5a2 2 0 01-2 2H9a2 2 0 01-2-2v-5m6 0H7" />
                   </svg>
                   {cartItemCount > 0 && (
                     <span className="absolute -top-1 -right-1 bg-red-500 text-white text-xs rounded-full h-5 w-5 flex items-center justify-center">
                       {cartItemCount}
+                    </span>
+                  )}
+                </Link>
+                
+                {/* Team Cart */}
+                <Link href="/collaborative-carts" className="relative p-2 text-gray-600 hover:text-orange-600" title="Team Carts">
+                  <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    {/* Shopping cart with users icon - combining cart and team */}
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 3h2l.4 2M7 13h10l4-8H5.4m0 0L7 13m0 0l-1.5 9h9L13 13M13 13v5a2 2 0 01-2 2H9a2 2 0 01-2-2v-5m6 0H7" />
+                    {/* Add small team indicator */}
+                    <circle cx="18" cy="6" r="2" strokeWidth={1.5} />
+                    <circle cx="20" cy="8" r="1.5" strokeWidth={1.5} />
+                  </svg>
+                  {collaborativeItemCount > 0 && (
+                    <span className="absolute -top-1 -right-1 bg-blue-500 text-white text-xs rounded-full h-5 w-5 flex items-center justify-center">
+                      {collaborativeItemCount}
                     </span>
                   )}
                 </Link>

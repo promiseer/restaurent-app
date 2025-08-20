@@ -3,7 +3,7 @@
 import React, { useState, useEffect } from 'react'
 import { useRouter } from 'next/navigation'
 import { useToast } from '../../components/ToastContext'
-import { auth, paymentAPI } from '../../lib/api'
+import { auth, paymentAPI, apiClient } from '../../lib/api'
 
 interface User {
   id: string
@@ -32,25 +32,63 @@ interface PaymentHistory {
   paymentStatus: string
   paymentMethod: string
   createdAt: string
-  restaurant: {
-    name: string
+  restaurant?: {
+    name?: string
+  } | null
+  user?: {
+    name?: string
+    email?: string
+  } | null
+}
+
+interface GlobalPaymentMethod {
+  _id: string
+  name: string
+  type: 'card' | 'upi' | 'wallet' | 'bank_transfer' | 'cash'
+  country: 'India' | 'America' | 'Global'
+  details: {
+    cardNumber?: string
+    expiryDate?: string
+    cvv?: string
+    upiId?: string
+    walletId?: string
+    accountNumber?: string
+    routingNumber?: string
+    bankName?: string
+    description?: string
   }
-  user: {
+  isActive: boolean
+  isDefault: boolean
+  createdBy: {
     name: string
     email: string
   }
+  createdAt: string
 }
 
 export default function PaymentsPage() {
   const [user, setUser] = useState<User | null>(null)
   const [paymentMethods, setPaymentMethods] = useState<PaymentMethod[]>([])
+  const [globalPaymentMethods, setGlobalPaymentMethods] = useState<GlobalPaymentMethod[]>([])
   const [paymentHistory, setPaymentHistory] = useState<PaymentHistory[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
   const [showAddForm, setShowAddForm] = useState(false)
+  const [showGlobalForm, setShowGlobalForm] = useState(false)
+  const [selectedCountry, setSelectedCountry] = useState<string>('all')
   const [newPaymentMethod, setNewPaymentMethod] = useState({
     type: 'card' as 'card' | 'upi' | 'wallet',
     details: {},
+    isDefault: false
+  })
+  const [newGlobalPaymentMethod, setNewGlobalPaymentMethod] = useState({
+    name: '',
+    type: 'card' as 'card' | 'upi' | 'wallet' | 'bank_transfer' | 'cash',
+    country: 'Global' as 'India' | 'America' | 'Global',
+    details: {
+      description: ''
+    },
+    isActive: true,
     isDefault: false
   })
   const router = useRouter()
@@ -79,8 +117,15 @@ export default function PaymentsPage() {
       const methodsData = await paymentAPI.getMethods()
       setPaymentMethods(methodsData.paymentMethods || [])
 
+      // Fetch global payment methods if admin
+      if (user?.role === 'admin') {
+        await fetchGlobalPaymentMethods()
+      }
+
       // Fetch payment history
       const historyData = await paymentAPI.getHistory()
+      console.log('Payment history data:', historyData)
+      console.log('Individual payments:', historyData.payments)
       setPaymentHistory(historyData.payments || [])
 
     } catch (err: any) {
@@ -130,6 +175,61 @@ export default function PaymentsPage() {
       success('Payment method deleted successfully')
     } catch (err: any) {
       showError(err.message || 'Failed to delete payment method')
+    }
+  }
+
+  const fetchGlobalPaymentMethods = async () => {
+    try {
+      const data = await apiClient.get('/payments/global')
+      setGlobalPaymentMethods(data.paymentMethods || [])
+    } catch (err: any) {
+      console.error('Failed to fetch global payment methods:', err)
+    }
+  }
+
+  const handleAddGlobalPaymentMethod = async (e: React.FormEvent) => {
+    e.preventDefault()
+    
+    if (!user || user.role !== 'admin') {
+      warning('Only admins can add global payment methods')
+      return
+    }
+
+    try {
+      await apiClient.post('/payments/global', newGlobalPaymentMethod)
+      
+      setShowGlobalForm(false)
+      setNewGlobalPaymentMethod({
+        name: '',
+        type: 'card',
+        country: 'Global',
+        details: { description: '' },
+        isActive: true,
+        isDefault: false
+      })
+      await fetchGlobalPaymentMethods()
+      success('Global payment method added successfully')
+    } catch (err: any) {
+      showError(err.message || 'Failed to add global payment method')
+    }
+  }
+
+  const handleDeleteGlobalPaymentMethod = async (methodId: string) => {
+    if (!user || user.role !== 'admin') {
+      warning('Only admins can delete global payment methods')
+      return
+    }
+
+    if (!confirm('Are you sure you want to delete this global payment method?')) {
+      return
+    }
+
+    try {
+      await apiClient.delete(`/payments/global/${methodId}`)
+      await fetchGlobalPaymentMethods()
+      success('Global payment method deleted successfully')
+    } catch (err: any) {
+      showError(err.message || 'Failed to delete global payment method')
     }
   }
 
@@ -407,38 +507,259 @@ export default function PaymentsPage() {
             )}
           </div>
 
+          {/* Global Payment Methods (Admin Only) */}
+          {user?.role === 'admin' && (
+            <div className="mb-8">
+              <div className="flex justify-between items-center mb-6">
+                <h2 className="text-xl font-semibold">Global Payment Methods</h2>
+                <div className="flex gap-3">
+                  <select
+                    value={selectedCountry}
+                    onChange={(e) => setSelectedCountry(e.target.value)}
+                    className="px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  >
+                    <option value="all">All Countries</option>
+                    <option value="Global">Global</option>
+                    <option value="India">India</option>
+                    <option value="America">America</option>
+                  </select>
+                  <button
+                    onClick={() => setShowGlobalForm(true)}
+                    className="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-lg"
+                  >
+                    Add Global Method
+                  </button>
+                </div>
+              </div>
+
+              {/* Add Global Payment Method Form */}
+              {showGlobalForm && (
+                <div className="card mb-6">
+                  <h3 className="text-lg font-medium mb-4">Add Global Payment Method</h3>
+                  <form onSubmit={handleAddGlobalPaymentMethod} className="space-y-4">
+                    <div className="grid grid-cols-2 gap-4">
+                      <div>
+                        <label className="block text-sm font-medium text-gray-700 mb-1">
+                          Method Name
+                        </label>
+                        <input
+                          type="text"
+                          placeholder="e.g. HDFC Credit Card"
+                          value={newGlobalPaymentMethod.name}
+                          onChange={(e) => setNewGlobalPaymentMethod({
+                            ...newGlobalPaymentMethod,
+                            name: e.target.value
+                          })}
+                          className="input-field"
+                          required
+                        />
+                      </div>
+                      <div>
+                        <label className="block text-sm font-medium text-gray-700 mb-1">
+                          Country
+                        </label>
+                        <select
+                          value={newGlobalPaymentMethod.country}
+                          onChange={(e) => setNewGlobalPaymentMethod({
+                            ...newGlobalPaymentMethod,
+                            country: e.target.value as 'India' | 'America' | 'Global'
+                          })}
+                          className="input-field"
+                        >
+                          <option value="Global">Global</option>
+                          <option value="India">India</option>
+                          <option value="America">America</option>
+                        </select>
+                      </div>
+                    </div>
+
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-1">
+                        Payment Type
+                      </label>
+                      <select
+                        value={newGlobalPaymentMethod.type}
+                        onChange={(e) => setNewGlobalPaymentMethod({
+                          ...newGlobalPaymentMethod, 
+                          type: e.target.value as 'card' | 'upi' | 'wallet' | 'bank_transfer' | 'cash'
+                        })}
+                        className="input-field"
+                      >
+                        <option value="card">Credit/Debit Card</option>
+                        <option value="upi">UPI</option>
+                        <option value="wallet">Digital Wallet</option>
+                        <option value="bank_transfer">Bank Transfer</option>
+                        <option value="cash">Cash on Delivery</option>
+                      </select>
+                    </div>
+
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-1">
+                        Description
+                      </label>
+                      <textarea
+                        placeholder="Additional details about this payment method"
+                        value={newGlobalPaymentMethod.details.description}
+                        onChange={(e) => setNewGlobalPaymentMethod({
+                          ...newGlobalPaymentMethod,
+                          details: { ...newGlobalPaymentMethod.details, description: e.target.value }
+                        })}
+                        className="input-field"
+                        rows={3}
+                      />
+                    </div>
+
+                    <div className="flex items-center gap-4">
+                      <label className="flex items-center">
+                        <input
+                          type="checkbox"
+                          checked={newGlobalPaymentMethod.isDefault}
+                          onChange={(e) => setNewGlobalPaymentMethod({
+                            ...newGlobalPaymentMethod,
+                            isDefault: e.target.checked
+                          })}
+                          className="mr-2"
+                        />
+                        Set as default for this country
+                      </label>
+                      <label className="flex items-center">
+                        <input
+                          type="checkbox"
+                          checked={newGlobalPaymentMethod.isActive}
+                          onChange={(e) => setNewGlobalPaymentMethod({
+                            ...newGlobalPaymentMethod,
+                            isActive: e.target.checked
+                          })}
+                          className="mr-2"
+                        />
+                        Active
+                      </label>
+                    </div>
+
+                    <div className="flex gap-3">
+                      <button
+                        type="button"
+                        onClick={() => setShowGlobalForm(false)}
+                        className="flex-1 px-4 py-2 border border-gray-300 text-gray-700 rounded-md hover:bg-gray-50"
+                      >
+                        Cancel
+                      </button>
+                      <button
+                        type="submit"
+                        className="flex-1 px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700"
+                      >
+                        Add Global Method
+                      </button>
+                    </div>
+                  </form>
+                </div>
+              )}
+
+              {/* Global Payment Methods List */}
+              <div className="space-y-4">
+                {globalPaymentMethods.filter(method => 
+                  selectedCountry === 'all' || method.country === selectedCountry
+                ).map((method) => (
+                  <div key={method._id} className="card">
+                    <div className="flex justify-between items-start">
+                      <div className="flex-1">
+                        <div className="flex items-center gap-3 mb-2">
+                          <h3 className="font-medium text-lg">{method.name}</h3>
+                          <span className={`px-2 py-1 rounded-full text-xs font-medium ${
+                            method.country === 'Global' ? 'bg-purple-100 text-purple-800' :
+                            method.country === 'India' ? 'bg-orange-100 text-orange-800' :
+                            'bg-blue-100 text-blue-800'
+                          }`}>
+                            {method.country}
+                          </span>
+                          <span className={`px-2 py-1 rounded-full text-xs font-medium ${
+                            method.isActive ? 'bg-green-100 text-green-800' : 'bg-red-100 text-red-800'
+                          }`}>
+                            {method.isActive ? 'Active' : 'Inactive'}
+                          </span>
+                          {method.isDefault && (
+                            <span className="px-2 py-1 rounded-full text-xs font-medium bg-yellow-100 text-yellow-800">
+                              Default
+                            </span>
+                          )}
+                        </div>
+                        <div className="text-sm text-gray-600 mb-1">
+                          <span className="font-medium">Type:</span> {method.type.replace('_', ' ').toUpperCase()}
+                        </div>
+                        {method.details.description && (
+                          <div className="text-sm text-gray-600 mb-2">
+                            <span className="font-medium">Description:</span> {method.details.description}
+                          </div>
+                        )}
+                        <div className="text-xs text-gray-500">
+                          Created by {method.createdBy.name} on {new Date(method.createdAt).toLocaleDateString()}
+                        </div>
+                      </div>
+                      <button
+                        onClick={() => handleDeleteGlobalPaymentMethod(method._id)}
+                        className="text-red-600 hover:text-red-800 px-3 py-1 text-sm"
+                      >
+                        Delete
+                      </button>
+                    </div>
+                  </div>
+                ))}
+                
+                {globalPaymentMethods.filter(method => 
+                  selectedCountry === 'all' || method.country === selectedCountry
+                ).length === 0 && (
+                  <div className="card text-center py-8">
+                    <div className="text-gray-400 text-4xl mb-4">💳</div>
+                    <h3 className="text-lg font-medium text-gray-900 mb-2">No global payment methods</h3>
+                    <p className="text-gray-600">
+                      Add global payment methods that will be available to managers during checkout.
+                    </p>
+                  </div>
+                )}
+              </div>
+            </div>
+          )}
+
           {/* Payment History */}
           <div>
             <h2 className="text-xl font-semibold mb-6">Payment History</h2>
             
-            {paymentHistory.length > 0 ? (
+            {loading ? (
+              <div className="card text-center py-8">
+                <div className="text-gray-400 text-4xl mb-4">⏳</div>
+                <p className="text-gray-600">Loading payment history...</p>
+              </div>
+            ) : paymentHistory.length > 0 ? (
               <div className="space-y-4">
-                {paymentHistory.map((payment) => (
-                  <div key={payment._id} className="card">
-                    <div className="flex justify-between items-start mb-2">
-                      <div>
-                        <h3 className="font-medium">{payment.restaurant.name}</h3>
-                        <p className="text-sm text-gray-600">
-                          {payment.user.name} ({payment.user.email})
-                        </p>
-                        <p className="text-sm text-gray-500">
-                          {new Date(payment.createdAt).toLocaleDateString()} at {new Date(payment.createdAt).toLocaleTimeString()}
-                        </p>
+                {paymentHistory.map((payment) => {
+                  console.log('Rendering payment:', payment)
+                  return (
+                    <div key={payment._id} className="card">
+                      <div className="flex justify-between items-start mb-2">
+                        <div>
+                          <h3 className="font-medium">{payment?.restaurant?.name || 'Unknown Restaurant'}</h3>
+                          <p className="text-sm text-gray-600">
+                            {payment?.user?.name || 'Unknown User'} ({payment?.user?.email || 'No email'})
+                          </p>
+                          <p className="text-sm text-gray-500">
+                            {new Date(payment.createdAt).toLocaleDateString()} at {new Date(payment.createdAt).toLocaleTimeString()}
+                          </p>
+                        </div>
+                        <div className="text-right">
+                          <p className="font-semibold text-lg">
+                            {getCurrency()}{(payment?.finalAmount || 0).toFixed(2)}
+                          </p>
+                          <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${getPaymentStatusColor(payment?.paymentStatus || 'unknown')}`}>
+                            {payment?.paymentStatus || 'Unknown'}
+                          </span>
+                        </div>
                       </div>
-                      <div className="text-right">
-                        <p className="font-semibold text-lg">
-                          {getCurrency()}{payment.finalAmount.toFixed(2)}
-                        </p>
-                        <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${getPaymentStatusColor(payment.paymentStatus)}`}>
-                          {payment.paymentStatus}
-                        </span>
+                      <div className="text-sm text-gray-600">
+                        <span className="font-medium">Payment Method:</span> {payment?.paymentMethod || 'Unknown'}
                       </div>
                     </div>
-                    <div className="text-sm text-gray-600">
-                      <span className="font-medium">Payment Method:</span> {payment.paymentMethod}
-                    </div>
-                  </div>
-                ))}
+                  )
+                })}
               </div>
             ) : (
               <div className="card text-center py-8">

@@ -3,6 +3,7 @@
 import React, { useState, useEffect } from 'react'
 import { useRouter } from 'next/navigation'
 import { useCart } from '../../../components/CartContext'
+import { useCollaborativeCart } from '../../../components/CollaborativeCartContext'
 import { useToast } from '../../../components/ToastContext'
 import { restaurantAPI, auth } from '../../../lib/api'
 
@@ -45,8 +46,11 @@ export default function RestaurantPage({ params }: { params: { id: string } }) {
   const [error, setError] = useState('')
   const [selectedCategory, setSelectedCategory] = useState<string>('all')
   const [user, setUser] = useState<any>(null)
+  const [showCartModal, setShowCartModal] = useState<MenuItem | null>(null)
+  const [selectedCart, setSelectedCart] = useState<string>('personal')
   const router = useRouter()
   const { addItem, getItemCount } = useCart()
+  const { carts, addItemToCart } = useCollaborativeCart()
   const { success, error: showError } = useToast()
 
   useEffect(() => {
@@ -85,18 +89,41 @@ export default function RestaurantPage({ params }: { params: { id: string } }) {
 
   const handleAddToCart = (item: MenuItem) => {
     if (!restaurant) return
+    setShowCartModal(item)
+  }
+
+  const confirmAddToCart = async () => {
+    if (!showCartModal || !restaurant) return
 
     try {
-      addItem({
-        id: item._id,
-        name: item.name,
-        price: item.price,
-        image: item.image,
-        restaurantId: restaurant._id,
-        restaurantName: restaurant.name
-      })
-
-      success(`${item.name} added to cart!`)
+      if (selectedCart === 'personal') {
+        addItem({
+          id: showCartModal._id,
+          name: showCartModal.name,
+          price: showCartModal.price,
+          image: showCartModal.image,
+          restaurantId: restaurant._id,
+          restaurantName: restaurant.name
+        })
+        success(`${showCartModal.name} added to cart!`)
+      } else {
+        const success_result = await addItemToCart(selectedCart, {
+          menuItemId: showCartModal._id,
+          name: showCartModal.name,
+          price: showCartModal.price,
+          quantity: 1,
+          image: showCartModal.image,
+          restaurantId: restaurant._id,
+          restaurantName: restaurant.name
+        })
+        
+        if (success_result) {
+          success(`${showCartModal.name} added to collaborative cart!`)
+        }
+      }
+      
+      setShowCartModal(null)
+      setSelectedCart('personal')
     } catch (err: any) {
       showError('Failed to add item to cart')
     }
@@ -325,6 +352,80 @@ export default function RestaurantPage({ params }: { params: { id: string } }) {
           </div>
         )}
       </main>
+
+      {/* Cart Selection Modal */}
+      {showCartModal && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50">
+          <div className="bg-white rounded-lg max-w-md w-full">
+            <div className="p-6">
+              <h3 className="text-xl font-semibold mb-4">Add "{showCartModal.name}" to Cart</h3>
+              
+              <div className="space-y-3">
+                <label className="flex items-center">
+                  <input
+                    type="radio"
+                    name="cartType"
+                    value="personal"
+                    checked={selectedCart === 'personal'}
+                    onChange={(e) => setSelectedCart(e.target.value)}
+                    className="mr-3"
+                  />
+                  <div>
+                    <div className="font-medium">Personal Cart</div>
+                    <div className="text-sm text-gray-600">Add to your individual cart</div>
+                  </div>
+                </label>
+
+                {carts.filter(cart => cart.status === 'active' && !cart.isLocked).map(cart => (
+                  <label key={cart._id} className="flex items-center">
+                    <input
+                      type="radio"
+                      name="cartType"
+                      value={cart._id}
+                      checked={selectedCart === cart._id}
+                      onChange={(e) => setSelectedCart(e.target.value)}
+                      className="mr-3"
+                    />
+                    <div>
+                      <div className="font-medium">{cart.name}</div>
+                      <div className="text-sm text-gray-600">
+                        Team cart • {cart.members.length} members
+                      </div>
+                    </div>
+                  </label>
+                ))}
+              </div>
+
+              {carts.filter(cart => cart.status === 'active' && !cart.isLocked).length === 0 && (
+                <div className="text-center py-4">
+                  <p className="text-gray-600 mb-2">No active collaborative carts available</p>
+                  <a href="/collaborative-carts" className="text-blue-600 hover:text-blue-700 underline">
+                    Create a collaborative cart
+                  </a>
+                </div>
+              )}
+
+              <div className="flex gap-3 mt-6">
+                <button
+                  onClick={() => {
+                    setShowCartModal(null)
+                    setSelectedCart('personal')
+                  }}
+                  className="flex-1 px-4 py-2 border border-gray-300 text-gray-700 rounded-md hover:bg-gray-50"
+                >
+                  Cancel
+                </button>
+                <button
+                  onClick={confirmAddToCart}
+                  className="flex-1 px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700"
+                >
+                  Add to Cart
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   )
 }

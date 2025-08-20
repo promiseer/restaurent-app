@@ -185,7 +185,7 @@ export default function OrdersPage() {
                 <div className="flex justify-between items-start mb-4">
                   <div>
                     <h3 className="text-lg font-semibold text-gray-900">
-                      {order.restaurant.name}
+                      {order.restaurant?.name || 'Restaurant N/A'}
                     </h3>
                     <p className="text-sm text-gray-600">
                       Order #{order._id.slice(-8)}
@@ -257,7 +257,7 @@ export default function OrdersPage() {
                     >
                       View Details
                     </button>
-                    {order.status === 'delivered' && (
+                    {order.status === 'delivered' && order.restaurant && (
                       <button
                         onClick={() => router.push(`/restaurant/${order.restaurant._id || order.restaurant}`)}
                         className="text-orange-600 hover:text-orange-800 text-sm font-medium"

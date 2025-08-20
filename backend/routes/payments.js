@@ -1,9 +1,11 @@
 const express = require('express');
 const User = require('../models/User');
 const Order = require('../models/Order');
+const PaymentMethod = require('../models/PaymentMethod');
 const { 
   authenticateToken, 
-  requirePaymentAccess 
+  requirePaymentAccess,
+  requireAdmin 
 } = require('../middleware/auth');
 
 const router = express.Router();
@@ -182,8 +184,34 @@ router.get('/history', authenticateToken, async (req, res) => {
         query['deliveryAddress.country'] = req.query.country;
       }
     } else if (req.user.role === 'manager') {
-      // Manager can see payments from their country
-      query['deliveryAddress.country'] = req.user.country;
+      // Manager can see:
+      // 1. Payments from their country (regular orders)
+      // 2. Collaborative cart orders they have access to
+      const CollaborativeCart = require('../models/CollaborativeCart');
+      
+      // Get all collaborative carts where this manager has access
+      const accessibleCarts = await CollaborativeCart.find({
+        $or: [
+          { creator: req.user._id },
+          { manager: req.user._id },
+          { 'members.user': req.user._id }
+        ]
+      }).select('_id name');
+      
+      const cartNames = accessibleCarts.map(cart => cart.name);
+      
+      query = {
+        $or: [
+          // Regular orders from their country
+          { 'deliveryAddress.country': req.user.country },
+          // Collaborative cart orders they have access to
+          { 
+            notes: { 
+              $regex: new RegExp(`^Collaborative cart order - Cart: (${cartNames.join('|')})`, 'i') 
+            } 
+          }
+        ]
+      };
     } else {
       // Members can only see their own payments
       query.user = req.user._id;
@@ -193,7 +221,7 @@ router.get('/history', authenticateToken, async (req, res) => {
       ...query,
       paymentStatus: { $in: ['paid', 'failed', 'refunded'] }
     })
-    .select('finalAmount paymentStatus paymentMethod createdAt restaurant user')
+    .select('finalAmount paymentStatus paymentMethod createdAt restaurant user notes')
     .populate('restaurant', 'name')
     .populate('user', 'name email')
     .sort({ createdAt: -1 });
@@ -240,6 +268,194 @@ router.post('/:orderId/refund', authenticateToken, async (req, res) => {
   } catch (error) {
     console.error('Process refund error:', error);
     res.status(500).json({ message: 'Refund processing failed', error: error.message });
+  }
+});
+
+// ==================== ADMIN GLOBAL PAYMENT METHODS ====================
+
+// Get global payment methods by country (for checkout)
+router.get('/global', authenticateToken, async (req, res) => {
+  try {
+    const { country } = req.query;
+    const userCountry = country || req.user.country;
+    
+    // Only managers and admins can access global payment methods
+    if (req.user.role !== 'manager' && req.user.role !== 'admin') {
+      return res.status(403).json({ message: 'Access denied. Only managers and admins can access global payment methods.' });
+    }
+    
+    const paymentMethods = await PaymentMethod.find({
+      $or: [
+        { country: userCountry },
+        { country: 'Global' }
+      ],
+      isActive: true
+    }).populate('createdBy', 'name email').sort({ isDefault: -1, createdAt: -1 });
+
+    res.json({ paymentMethods });
+  } catch (error) {
+    console.error('Get global payment methods error:', error);
+    res.status(500).json({ message: 'Failed to fetch global payment methods', error: error.message });
+  }
+});
+
+// Admin: Create global payment method
+router.post('/global', authenticateToken, requireAdmin, async (req, res) => {
+  try {
+    const paymentMethod = new PaymentMethod({
+      ...req.body,
+      createdBy: req.user._id
+    });
+
+    await paymentMethod.save();
+    await paymentMethod.populate('createdBy', 'name email');
+
+    res.status(201).json({
+      success: true,
+      message: 'Global payment method created successfully',
+      paymentMethod
+    });
+  } catch (error) {
+    console.error('Create global payment method error:', error);
+    res.status(500).json({ message: 'Failed to create global payment method', error: error.message });
+  }
+});
+
+// Admin: Delete global payment method
+router.delete('/global/:id', authenticateToken, requireAdmin, async (req, res) => {
+  try {
+    const paymentMethod = await PaymentMethod.findByIdAndDelete(req.params.id);
+    
+    if (!paymentMethod) {
+      return res.status(404).json({ message: 'Payment method not found' });
+    }
+
+    res.json({
+      success: true,
+      message: 'Global payment method deleted successfully'
+    });
+  } catch (error) {
+    console.error('Delete global payment method error:', error);
+    res.status(500).json({ message: 'Failed to delete global payment method', error: error.message });
+  }
+});
+
+// Get global payment methods (for managers based on country)
+router.get('/global-methods', authenticateToken, async (req, res) => {
+  try {
+    const userCountry = req.user.country;
+    
+    const paymentMethods = await PaymentMethod.find({
+      $or: [
+        { country: userCountry },
+        { country: 'Global' }
+      ],
+      isActive: true
+    }).populate('createdBy', 'name email').sort({ isDefault: -1, createdAt: -1 });
+
+    res.json({ paymentMethods });
+  } catch (error) {
+    console.error('Get global payment methods error:', error);
+    res.status(500).json({ message: 'Failed to fetch payment methods', error: error.message });
+  }
+});
+
+// Get all global payment methods (Admin only)
+router.get('/admin/global-methods', authenticateToken, requireAdmin, async (req, res) => {
+  try {
+    const { country } = req.query;
+    let query = {};
+    
+    if (country && country !== 'all') {
+      query.country = country;
+    }
+
+    const paymentMethods = await PaymentMethod.find(query)
+      .populate('createdBy', 'name email')
+      .sort({ country: 1, isDefault: -1, createdAt: -1 });
+
+    res.json({ paymentMethods });
+  } catch (error) {
+    console.error('Get admin payment methods error:', error);
+    res.status(500).json({ message: 'Failed to fetch payment methods', error: error.message });
+  }
+});
+
+// Add global payment method (Admin only)
+router.post('/admin/global-methods', authenticateToken, requireAdmin, async (req, res) => {
+  try {
+    const { name, type, country, details, isDefault, isActive = true } = req.body;
+
+    const paymentMethod = new PaymentMethod({
+      name,
+      type,
+      country,
+      details,
+      isDefault,
+      isActive,
+      createdBy: req.user._id
+    });
+
+    await paymentMethod.save();
+    await paymentMethod.populate('createdBy', 'name email');
+
+    res.json({
+      message: 'Global payment method added successfully',
+      paymentMethod
+    });
+  } catch (error) {
+    console.error('Add global payment method error:', error);
+    res.status(500).json({ message: 'Failed to add payment method', error: error.message });
+  }
+});
+
+// Update global payment method (Admin only)
+router.put('/admin/global-methods/:methodId', authenticateToken, requireAdmin, async (req, res) => {
+  try {
+    const { name, type, country, details, isDefault, isActive } = req.body;
+    
+    const paymentMethod = await PaymentMethod.findById(req.params.methodId);
+    if (!paymentMethod) {
+      return res.status(404).json({ message: 'Payment method not found' });
+    }
+
+    // Update fields
+    if (name !== undefined) paymentMethod.name = name;
+    if (type !== undefined) paymentMethod.type = type;
+    if (country !== undefined) paymentMethod.country = country;
+    if (details !== undefined) paymentMethod.details = details;
+    if (isDefault !== undefined) paymentMethod.isDefault = isDefault;
+    if (isActive !== undefined) paymentMethod.isActive = isActive;
+
+    await paymentMethod.save();
+    await paymentMethod.populate('createdBy', 'name email');
+
+    res.json({
+      message: 'Global payment method updated successfully',
+      paymentMethod
+    });
+  } catch (error) {
+    console.error('Update global payment method error:', error);
+    res.status(500).json({ message: 'Failed to update payment method', error: error.message });
+  }
+});
+
+// Delete global payment method (Admin only)
+router.delete('/admin/global-methods/:methodId', authenticateToken, requireAdmin, async (req, res) => {
+  try {
+    const paymentMethod = await PaymentMethod.findById(req.params.methodId);
+    if (!paymentMethod) {
+      return res.status(404).json({ message: 'Payment method not found' });
+    }
+
+    await PaymentMethod.findByIdAndDelete(req.params.methodId);
+
+    res.json({
+      message: 'Global payment method deleted successfully'
+    });
+  } catch (error) {
+    console.error('Delete global payment method error:', error);
+    res.status(500).json({ message: 'Failed to delete payment method', error: error.message });
   }
 });
 

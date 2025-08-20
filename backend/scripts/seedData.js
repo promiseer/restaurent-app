@@ -53,7 +53,7 @@ const users = [
 
 // Sample restaurants
 const restaurants = [
-  // Indian Restaurants
+  // Indian Restaurantsb
   {
     name: 'Spice Garden',
     description: 'Authentic Indian cuisine with traditional flavors',
@@ -147,14 +147,14 @@ const restaurants = [
     phone: '+91-9876543211',
     email: 'orders@biryanipalace.com',
     rating: 4.7,
-    image: 'https://images.unsplash.com/photo-1563379091339-03246963d31a?w=400',
+    image: 'https://as2.ftcdn.net/jpg/04/36/36/57/1000_F_436365754_z3i5Es0sFmZuLY6GZIzdiU01v9HqpGZe.jpg',
     menu: [
       {
         name: 'Chicken Biryani',
         description: 'Aromatic basmati rice with spiced chicken',
         price: 420,
         category: 'main_course',
-        image: 'https://images.unsplash.com/photo-1563379091339-03246963d31a?w=300',
+        image: 'https://as2.ftcdn.net/jpg/04/36/36/57/1000_F_436365754_z3i5Es0sFmZuLY6GZIzdiU01v9HqpGZe.jpg',
         isVegetarian: false,
         spiceLevel: 'medium',
         preparationTime: 45

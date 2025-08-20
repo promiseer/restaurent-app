@@ -86,7 +86,13 @@ router.post('/', authenticateToken, requireOrderAccess, async (req, res) => {
     }
 
     // Check country access for non-admin users
-    if (req.user.role !== 'admin' && restaurant.address.country !== req.user.country) {
+    // Allow collaborative cart orders to bypass country restrictions
+    const isCollaborativeCartOrder = req.body.cartType === 'collaborative';
+    
+    console.log("restaurant",restaurant.address.country, req.user.country)
+    console.log("isCollaborativeCartOrder", isCollaborativeCartOrder)
+    
+    if (req.user.role !== 'admin' && !isCollaborativeCartOrder && restaurant.address.country !== req.user.country) {
       return res.status(403).json({ 
         message: 'Access denied. You can only order from restaurants in your assigned country.' 
       });
@@ -98,6 +104,7 @@ router.post('/', authenticateToken, requireOrderAccess, async (req, res) => {
 
     for (const item of items) {
       const menuItem = restaurant.menu.id(item.menuItemId);
+      console.log("menuItem", menuItem);
       if (!menuItem || !menuItem.isAvailable) {
         return res.status(400).json({ 
           message: `Menu item ${item.name || 'unknown'} is not available` 
@@ -138,6 +145,9 @@ router.post('/', authenticateToken, requireOrderAccess, async (req, res) => {
       deliveryAddress,
       customerPhone,
       paymentMethod,
+      cartType: req.body.cartType || 'regular',
+      collaborativeCartId: req.body.collaborativeCartId || undefined,
+      notes: req.body.notes || '',
       estimatedDeliveryTime: new Date(Date.now() + (restaurant.preparationTime || 30) * 60000)
     });
 
@@ -159,9 +169,12 @@ router.post('/', authenticateToken, requireOrderAccess, async (req, res) => {
 // Update order status (Admin and Manager only)
 router.put('/:id/status', authenticateToken, async (req, res) => {
   try {
-    const { status } = req.body;
+    const { status, notes } = req.body;
     
-    const order = await Order.findById(req.params.id);
+    const order = await Order.findById(req.params.id)
+      .populate('restaurant', 'name address')
+      .populate('user', 'name email');
+      
     if (!order) {
       return res.status(404).json({ message: 'Order not found' });
     }
@@ -171,10 +184,13 @@ router.put('/:id/status', authenticateToken, async (req, res) => {
       return res.status(403).json({ message: 'Access denied. Members cannot update order status.' });
     }
 
-    if (req.user.role === 'manager' && order.deliveryAddress.country !== req.user.country) {
-      return res.status(403).json({ 
-        message: 'Access denied. You can only update orders from your assigned country.' 
-      });
+    // For managers, check country access (allow collaborative cart orders)
+    if (req.user.role === 'manager') {
+      if (order.deliveryAddress.country !== req.user.country && order.cartType !== 'collaborative') {
+        return res.status(403).json({ 
+          message: 'Access denied. You can only update orders from your assigned country.' 
+        });
+      }
     }
 
     // Validate status transition
@@ -183,11 +199,39 @@ router.put('/:id/status', authenticateToken, async (req, res) => {
       return res.status(400).json({ message: 'Invalid order status' });
     }
 
+    // Define valid status transitions
+    const statusFlow = {
+      'pending': ['confirmed', 'cancelled'],
+      'confirmed': ['preparing', 'cancelled'],
+      'preparing': ['ready', 'cancelled'],
+      'ready': ['delivered', 'cancelled'],
+      'delivered': [], // Final status
+      'cancelled': [] // Final status
+    };
+
+    if (statusFlow[order.status] && !statusFlow[order.status].includes(status)) {
+      return res.status(400).json({ 
+        message: `Cannot change status from ${order.status} to ${status}` 
+      });
+    }
+
+    // Update order
     order.status = status;
     
     if (status === 'delivered') {
       order.actualDeliveryTime = new Date();
       order.paymentStatus = 'paid';
+    }
+
+    // Add status change note
+    if (notes) {
+      const timestamp = new Date().toISOString();
+      const statusNote = `[${timestamp}] Status changed to ${status} by ${req.user.name}: ${notes}`;
+      order.notes = order.notes ? `${order.notes}\n${statusNote}` : statusNote;
+    } else {
+      const timestamp = new Date().toISOString();
+      const statusNote = `[${timestamp}] Status changed to ${status} by ${req.user.name}`;
+      order.notes = order.notes ? `${order.notes}\n${statusNote}` : statusNote;
     }
 
     await order.save();
@@ -327,6 +371,72 @@ router.get('/stats/summary', authenticateToken, async (req, res) => {
   } catch (error) {
     console.error('Get order stats error:', error);
     res.status(500).json({ message: 'Failed to fetch order statistics', error: error.message });
+  }
+});
+
+// Get orders for management (Admin and Manager only)
+router.get('/manage', authenticateToken, async (req, res) => {
+  try {
+    if (req.user.role === 'member') {
+      return res.status(403).json({ message: 'Access denied. Members cannot manage orders.' });
+    }
+
+    const { status, restaurant, date, page = 1, limit = 20 } = req.query;
+    
+    // Build filter query
+    let filterQuery = {};
+    
+    // For managers, filter by country (allow collaborative carts)
+    if (req.user.role === 'manager') {
+      filterQuery.$or = [
+        { 'deliveryAddress.country': req.user.country },
+        { cartType: 'collaborative' }
+      ];
+    }
+
+    // Add status filter
+    if (status && status !== 'all') {
+      filterQuery.status = status;
+    }
+
+    // Add restaurant filter
+    if (restaurant && restaurant !== 'all') {
+      filterQuery.restaurant = restaurant;
+    }
+
+    // Add date filter
+    if (date) {
+      const startDate = new Date(date);
+      const endDate = new Date(date);
+      endDate.setDate(endDate.getDate() + 1);
+      filterQuery.createdAt = { $gte: startDate, $lt: endDate };
+    }
+
+    // Get orders with pagination
+    const orders = await Order.find(filterQuery)
+      .populate('restaurant', 'name address')
+      .populate('user', 'name email')
+      .sort({ createdAt: -1 })
+      .limit(limit * 1)
+      .skip((page - 1) * limit);
+
+    const totalOrders = await Order.countDocuments(filterQuery);
+    const totalPages = Math.ceil(totalOrders / limit);
+
+    res.json({
+      orders,
+      pagination: {
+        currentPage: parseInt(page),
+        totalPages,
+        totalOrders,
+        hasNextPage: page < totalPages,
+        hasPrevPage: page > 1
+      }
+    });
+
+  } catch (error) {
+    console.error('Error fetching orders for management:', error);
+    res.status(500).json({ message: 'Failed to fetch orders', error: error.message });
   }
 });
 

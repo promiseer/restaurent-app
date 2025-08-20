@@ -129,14 +129,55 @@ export const auth = {
 
   getCurrentUser: () => {
     if (typeof window !== 'undefined') {
-      const userStr = localStorage.getItem('user')
-      return userStr ? JSON.parse(userStr) : null
+      const token = getToken()
+      if (!token) return null
+      
+      try {
+        const payload = JSON.parse(atob(token.split('.')[1]))
+        
+        // Check if token is expired
+        const currentTime = Date.now() / 1000
+        if (payload.exp < currentTime) {
+          // Token is expired, clean up
+          localStorage.removeItem('token')
+          localStorage.removeItem('user')
+          return null
+        }
+        
+        return {
+          _id: payload.userId,
+          name: payload.name,
+          email: payload.email,
+          role: payload.role,
+          country: payload.country
+        }
+      } catch (error) {
+        // Invalid token format, clean up and try localStorage fallback
+        const userStr = localStorage.getItem('user')
+        if (userStr) {
+          try {
+            return JSON.parse(userStr)
+          } catch {
+            localStorage.removeItem('user')
+          }
+        }
+        return null
+      }
     }
     return null
   },
 
   isAuthenticated: () => {
-    return !!getToken()
+    const token = getToken()
+    if (!token) return false
+    
+    try {
+      const payload = JSON.parse(atob(token.split('.')[1]))
+      const currentTime = Date.now() / 1000
+      return payload.exp > currentTime
+    } catch (error) {
+      return false
+    }
   },
 }
 
@@ -154,11 +195,29 @@ export const orderAPI = {
   getAll: () => apiClient.get('/orders'),
   getById: (id: string) => apiClient.get(`/orders/${id}`),
   create: (data: any) => apiClient.post('/orders', data),
-  updateStatus: (id: string, status: string) => 
-    apiClient.put(`/orders/${id}/status`, { status }),
+  updateStatus: (id: string, status: string, notes?: string) => 
+    apiClient.put(`/orders/${id}/status`, { status, notes }),
   cancel: (id: string, reason: string) => 
     apiClient.put(`/orders/${id}/cancel`, { reason }),
   getStats: () => apiClient.get('/orders/stats/summary'),
+  getForManagement: (params?: {
+    status?: string;
+    restaurant?: string;
+    date?: string;
+    page?: number;
+    limit?: number;
+  }) => {
+    const searchParams = new URLSearchParams();
+    if (params) {
+      Object.entries(params).forEach(([key, value]) => {
+        if (value !== undefined && value !== null) {
+          searchParams.append(key, value.toString());
+        }
+      });
+    }
+    const queryString = searchParams.toString();
+    return apiClient.get(`/orders/manage${queryString ? `?${queryString}` : ''}`);
+  },
 }
 
 // Payment API
@@ -170,6 +229,15 @@ export const paymentAPI = {
   deleteMethod: (id: string) => apiClient.delete(`/payments/methods/${id}`),
   processPayment: (data: any) => apiClient.post('/payments/process', data),
   getHistory: () => apiClient.get('/payments/history'),
+  
+  // Global payment methods (admin-managed, country-specific)
+  getGlobalMethods: () => apiClient.get('/payments/global-methods'),
+  getAdminGlobalMethods: (country?: string) => 
+    apiClient.get(`/payments/admin/global-methods${country ? `?country=${country}` : ''}`),
+  addGlobalMethod: (data: any) => apiClient.post('/payments/admin/global-methods', data),
+  updateGlobalMethod: (id: string, data: any) => 
+    apiClient.put(`/payments/admin/global-methods/${id}`, data),
+  deleteGlobalMethod: (id: string) => apiClient.delete(`/payments/admin/global-methods/${id}`),
 }
 
 // User API

@@ -29,6 +29,34 @@ interface OrderStats {
   pendingOrders: number
 }
 
+interface Order {
+  _id: string
+  user: {
+    _id: string
+    name: string
+    email: string
+  }
+  restaurant: {
+    _id: string
+    name: string
+    address: {
+      country: string
+    }
+  }
+  items: Array<{
+    name: string
+    quantity: number
+    price: number
+  }>
+  status: 'pending' | 'confirmed' | 'preparing' | 'ready' | 'delivered' | 'cancelled'
+  totalAmount: number
+  paymentMethod: string
+  paymentStatus: string
+  cartType: 'regular' | 'collaborative'
+  createdAt: string
+  notes?: string
+}
+
 export default function AdminPage() {
   const [activeTab, setActiveTab] = useState('dashboard')
   const [users, setUsers] = useState<User[]>([])
@@ -37,6 +65,21 @@ export default function AdminPage() {
   const [currentUser, setCurrentUser] = useState<any>(null)
   const [isLoading, setIsLoading] = useState(true)
   const [error, setError] = useState('')
+  
+  // Order management states
+  const [orders, setOrders] = useState<Order[]>([])
+  const [orderPage, setOrderPage] = useState(1)
+  const [totalOrderPages, setTotalOrderPages] = useState(1)
+  const [orderFilters, setOrderFilters] = useState({
+    status: '',
+    restaurant: '',
+    startDate: '',
+    endDate: ''
+  })
+  const [isStatusModalOpen, setIsStatusModalOpen] = useState(false)
+  const [selectedOrder, setSelectedOrder] = useState<Order | null>(null)
+  const [statusNotes, setStatusNotes] = useState('')
+  
   const router = useRouter()
 
   useEffect(() => {
@@ -117,7 +160,7 @@ export default function AdminPage() {
       {/* Navigation Tabs */}
       <div className="mb-8">
         <nav className="flex space-x-8">
-          {['dashboard', 'users', 'restaurants'].map((tab) => (
+          {['dashboard', 'orders', 'users', 'restaurants'].map((tab) => (
             <button
               key={tab}
               onClick={() => setActiveTab(tab)}

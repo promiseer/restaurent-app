@@ -90,6 +90,18 @@ const orderSchema = new mongoose.Schema({
     type: String,
     default: ''
   },
+  cartType: {
+    type: String,
+    enum: ['regular', 'collaborative'],
+    default: 'regular'
+  },
+  collaborativeCartId: {
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'CollaborativeCart',
+    required: function() {
+      return this.cartType === 'collaborative';
+    }
+  },
   cancellationReason: {
     type: String
   },
@@ -109,6 +121,8 @@ orderSchema.index({ user: 1, createdAt: -1 });
 orderSchema.index({ restaurant: 1, createdAt: -1 });
 orderSchema.index({ status: 1 });
 orderSchema.index({ 'deliveryAddress.country': 1 });
+orderSchema.index({ cartType: 1 });
+orderSchema.index({ collaborativeCartId: 1 });
 
 // Calculate final amount before saving
 orderSchema.pre('save', function(next) {

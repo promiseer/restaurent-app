@@ -8,20 +8,37 @@ const authenticateToken = async (req, res, next) => {
     const token = authHeader && authHeader.split(' ')[1]; // Bearer TOKEN
 
     if (!token) {
+      console.log('No token provided in authorization header');
       return res.status(401).json({ message: 'Access token required' });
     }
 
+    console.log('Token received, verifying...');
     const decoded = jwt.verify(token, process.env.JWT_SECRET);
+    console.log('Token decoded successfully, user ID:', decoded.userId);
+    
     const user = await User.findById(decoded.userId).select('-password');
     
-    if (!user || !user.isActive) {
-      return res.status(401).json({ message: 'Invalid token or user not active' });
+    if (!user) {
+      console.log('User not found for ID:', decoded.userId);
+      return res.status(401).json({ message: 'Invalid token - user not found' });
+    }
+    
+    if (!user.isActive) {
+      console.log('User is not active:', user.email);
+      return res.status(401).json({ message: 'User account is not active' });
     }
 
+    console.log('User authenticated successfully:', user.email);
     req.user = user;
     next();
   } catch (error) {
-    console.error('Auth middleware error:', error);
+    console.error('Auth middleware error:', error.message);
+    if (error.name === 'TokenExpiredError') {
+      return res.status(403).json({ message: 'Token has expired' });
+    }
+    if (error.name === 'JsonWebTokenError') {
+      return res.status(403).json({ message: 'Invalid token format' });
+    }
     return res.status(403).json({ message: 'Invalid or expired token' });
   }
 };
@@ -114,11 +131,27 @@ const requireCancelAccess = (req, res, next) => {
   next();
 };
 
+// Require admin role
+const requireAdmin = (req, res, next) => {
+  if (!req.user) {
+    return res.status(401).json({ message: 'Authentication required' });
+  }
+
+  if (req.user.role !== 'admin') {
+    return res.status(403).json({ 
+      message: 'Access denied. Admin access required.' 
+    });
+  }
+
+  next();
+};
+
 module.exports = {
   authenticateToken,
   requireRole,
   requireCountryAccess,
   requirePaymentAccess,
   requireOrderAccess,
-  requireCancelAccess
+  requireCancelAccess,
+  requireAdmin
 };
